@@ -33,7 +33,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.time.Duration
-import java.util.UUID
 
 class SandboxesAdapterTest {
     private lateinit var mockWebServer: MockWebServer
@@ -106,12 +105,12 @@ class SandboxesAdapterTest {
         assertEquals("true", gotExtensions["debug"]!!.jsonPrimitive.content)
 
         // Verify response
-        assertEquals(UUID.fromString("550e8400-e29b-41d4-a716-446655440000"), result.id)
+        assertEquals("550e8400-e29b-41d4-a716-446655440000", result.id)
     }
 
     @Test
     fun `getSandboxInfo should parse response correctly`() {
-        val sandboxId = UUID.randomUUID()
+        val sandboxId = "sandbox-id"
         val responseBody =
             """
             {
