@@ -36,6 +36,9 @@ func main() {
 	}
 	if policy == nil {
 		log.Println("OPENSANDBOX_NETWORK_POLICY empty; skip egress control")
+		// Block here to avoid infinite container restart loop in Kubernetes
+		// when restartPolicy is Always. As a sidecar, we should keep running.
+		<-ctx.Done()
 		return
 	}
 
