@@ -1,0 +1,411 @@
+// Copyright 2026 Alibaba Group Holding Ltd.
+// 
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// 
+//     http://www.apache.org/licenses/LICENSE-2.0
+// 
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import { afterAll, beforeAll, expect, test } from "vitest";
+
+import {
+  Sandbox,
+  DEFAULT_EXECD_PORT,
+  SandboxManager,
+  type ExecutionHandlers,
+  type ExecutionComplete,
+  type ExecutionError,
+  type ExecutionInit,
+  type ExecutionResult,
+  type OutputMessage,
+} from "@alibaba-group/opensandbox";
+
+import {
+  assertEndpointHasPort,
+  assertRecentTimestampMs,
+  createConnectionConfig,
+  getSandboxImage,
+} from "./base_e2e.ts";
+
+let sandbox: Sandbox | null = null;
+
+beforeAll(async () => {
+  const connectionConfig = createConnectionConfig();
+
+  sandbox = await Sandbox.create({
+    connectionConfig,
+    image: getSandboxImage(),
+    timeoutSeconds: 2 * 60,
+    readyTimeoutSeconds: 60,
+    metadata: { tag: "e2e-test" },
+    entrypoint: ["tail", "-f", "/dev/null"],
+    env: {
+      E2E_TEST: "true",
+      GO_VERSION: "1.25",
+      JAVA_VERSION: "21",
+      NODE_VERSION: "22",
+      PYTHON_VERSION: "3.12",
+    },
+    healthCheckPollingInterval: 200,
+  });
+}, 5 * 60_000);
+
+afterAll(async () => {
+  if (!sandbox) return;
+  try {
+    // keep teardown best-effort
+    await sandbox.kill();
+  } catch {
+    // ignore
+  }
+}, 5 * 60_000);
+
+test("01 sandbox lifecycle, health, endpoint, metrics, renew, connect", async () => {
+  if (!sandbox) throw new Error("sandbox not created");
+
+  expect(typeof sandbox.id).toBe("string");
+  expect(await sandbox.isHealthy()).toBe(true);
+
+  await new Promise((resolve) => setTimeout(resolve, 5000));
+  const info = await sandbox.getInfo();
+  expect(info.id).toBe(sandbox.id);
+  expect(info.status.state).toBe("Running");
+  expect(info.entrypoint).toEqual(["tail", "-f", "/dev/null"]);
+  expect(info.metadata?.tag).toBe("e2e-test");
+
+  const ep = await sandbox.getEndpoint(DEFAULT_EXECD_PORT);
+  expect(ep).toBeTruthy();
+  expect(typeof ep.endpoint).toBe("string");
+  assertEndpointHasPort(ep.endpoint, DEFAULT_EXECD_PORT);
+
+  const metrics = await sandbox.getMetrics();
+  expect(metrics.cpuCount).toBeGreaterThan(0);
+  expect(metrics.cpuUsedPercentage).toBeGreaterThanOrEqual(0);
+  expect(metrics.cpuUsedPercentage).toBeLessThanOrEqual(100);
+  expect(metrics.memoryTotalMiB).toBeGreaterThan(0);
+  expect(metrics.memoryUsedMiB).toBeGreaterThanOrEqual(0);
+  expect(metrics.memoryUsedMiB).toBeLessThanOrEqual(metrics.memoryTotalMiB);
+  assertRecentTimestampMs(metrics.timestamp, 120_000);
+
+  const renewResp = await sandbox.renew(5 * 60);
+  expect(renewResp.expiresAt).toBeTruthy();
+  expect(renewResp.expiresAt).toBeInstanceOf(Date);
+
+  const connectionConfig = sandbox.connectionConfig;
+  const sandbox2 = await Sandbox.connect({
+    sandboxId: sandbox.id,
+    connectionConfig,
+  });
+  try {
+    expect(sandbox2.id).toBe(sandbox.id);
+    expect(await sandbox2.isHealthy()).toBe(true);
+    const r = await sandbox2.commands.run("echo connect-ok");
+    expect(r.error).toBeUndefined();
+    expect(r.logs.stdout[0]?.text).toBe("connect-ok");
+  } finally {
+    // no local resources to close
+  }
+});
+
+test("01b sandbox manager: list + get", async () => {
+  if (!sandbox) throw new Error("sandbox not created");
+
+  const manager = SandboxManager.create({ connectionConfig: sandbox.connectionConfig });
+
+  const list = await manager.listSandboxInfos({
+    states: ["Running"],
+    metadata: { tag: "e2e-test" },
+    pageSize: 50,
+  });
+  expect(Array.isArray(list.items)).toBe(true);
+  expect(list.items.some((s) => s.id === sandbox!.id)).toBe(true);
+
+  const info = await manager.getSandboxInfo(sandbox.id);
+  expect(info.id).toBe(sandbox.id);
+  expect(info.metadata?.tag).toBe("e2e-test");
+});
+
+test("02 command execution: success, cwd, background, failure", async () => {
+  if (!sandbox) throw new Error("sandbox not created");
+
+  const stdoutMessages: OutputMessage[] = [];
+  const stderrMessages: OutputMessage[] = [];
+  const results: ExecutionResult[] = [];
+  const initEvents: ExecutionInit[] = [];
+  const completedEvents: ExecutionComplete[] = [];
+  const errors: ExecutionError[] = [];
+
+  const handlers: ExecutionHandlers = {
+    onStdout: (m) => {
+      stdoutMessages.push(m);
+    },
+    onStderr: (m) => {
+      stderrMessages.push(m);
+    },
+    onResult: (r) => {
+      results.push(r);
+    },
+    onInit: (i) => {
+      initEvents.push(i);
+    },
+    onExecutionComplete: (c) => {
+      completedEvents.push(c);
+    },
+    onError: (e) => {
+      errors.push(e);
+    },
+  };
+
+  const ok = await sandbox.commands.run(
+    "echo 'Hello OpenSandbox E2E'",
+    undefined,
+    handlers
+  );
+  expect(ok.id).toBeTruthy();
+  expect(ok.error).toBeUndefined();
+  expect(ok.logs.stdout).toHaveLength(1);
+  expect(ok.logs.stdout[0]?.text).toBe("Hello OpenSandbox E2E");
+  assertRecentTimestampMs(ok.logs.stdout[0]!.timestamp);
+
+  expect(initEvents).toHaveLength(1);
+  expect(completedEvents).toHaveLength(1);
+  expect(errors).toHaveLength(0);
+
+  const pwd = await sandbox.commands.run("pwd", { workingDirectory: "/tmp" });
+  expect(pwd.error).toBeUndefined();
+  expect(pwd.logs.stdout[0]?.text).toBe("/tmp");
+
+  const start = Date.now();
+  await sandbox.commands.run("sleep 30", { background: true });
+  expect(Date.now() - start).toBeLessThan(10_000);
+
+  // failure contract: error exists; completion should be absent
+  stdoutMessages.length = 0;
+  stderrMessages.length = 0;
+  results.length = 0;
+  initEvents.length = 0;
+  completedEvents.length = 0;
+  errors.length = 0;
+
+  const fail = await sandbox.commands.run(
+    "nonexistent-command-that-does-not-exist",
+    undefined,
+    handlers
+  );
+  expect(fail.id).toBeTruthy();
+  expect(fail.error).toBeTruthy();
+  expect(fail.error?.name).toBe("CommandExecError");
+  expect(fail.logs.stderr.length).toBeGreaterThan(0);
+  expect(
+    fail.logs.stderr.some((m) =>
+      m.text.includes("nonexistent-command-that-does-not-exist")
+    )
+  ).toBe(true);
+  expect(completedEvents.length).toBe(0);
+});
+
+test("03 filesystem operations: CRUD + replace/move/delete + range + stream", async () => {
+  if (!sandbox) throw new Error("sandbox not created");
+
+  const ts = Date.now();
+  const dir1 = `/tmp/fs_test1_${ts}`;
+  const dir2 = `/tmp/fs_test2_${ts}`;
+
+  await sandbox.files.createDirectories([
+    { path: dir1, mode: 755 },
+    { path: dir2, mode: 644 },
+  ]);
+
+  const infoMap = await sandbox.files.getFileInfo([dir1, dir2]);
+  expect(infoMap[dir1]?.path).toBe(dir1);
+  expect(infoMap[dir2]?.path).toBe(dir2);
+  expect(infoMap[dir1]?.mode).toBe(755);
+  expect(infoMap[dir2]?.mode).toBe(644);
+
+  const ls = await sandbox.commands.run("ls -la | grep fs_test", {
+    workingDirectory: "/tmp",
+  });
+  expect(ls.error).toBeUndefined();
+  expect(ls.logs.stdout).toHaveLength(2);
+
+  const file1 = `${dir1}/test_file1.txt`;
+  const file2 = `${dir1}/test_file2.txt`;
+  const file3 = `${dir1}/test_file3.txt`;
+  const content = "Hello Filesystem!\nLine 2 with special chars: åäö\nLine 3";
+  const bytes = new TextEncoder().encode(content);
+
+  // Align with Python/Kotlin semantics but keep E2E portable across different base images:
+  // prefer "nogroup"/"nobody" if present, otherwise fall back to "root".
+  const ownerPick = await sandbox.commands.run(
+    `id -u nobody >/dev/null 2>&1 && echo nobody || echo root`,
+    { workingDirectory: "/tmp" }
+  );
+  expect(ownerPick.error).toBeUndefined();
+  const ownerName = (ownerPick.logs.stdout[0]?.text || "root").trim();
+
+  const groupPick = await sandbox.commands.run(
+    `getent group nogroup >/dev/null 2>&1 && echo nogroup || echo root`,
+    { workingDirectory: "/tmp" }
+  );
+  expect(groupPick.error).toBeUndefined();
+  const groupName = (groupPick.logs.stdout[0]?.text || "root").trim();
+
+  await sandbox.files.writeFiles([
+    { path: file1, data: content, mode: 644 },
+    { path: file2, data: bytes, mode: 755 },
+    { path: file3, data: bytes, mode: 755, owner: ownerName, group: groupName },
+  ]);
+
+  const searched = await sandbox.files.search({ path: dir1, pattern: "*" });
+  const searchedPaths = new Set(searched.map((f) => f.path));
+  expect(searchedPaths.has(file1)).toBe(true);
+  expect(searchedPaths.has(file2)).toBe(true);
+  expect(searchedPaths.has(file3)).toBe(true);
+
+  const read1 = await sandbox.files.readFile(file1, { encoding: "utf-8" });
+  const read1Partial = await sandbox.files.readFile(file1, {
+    encoding: "utf-8",
+    range: "bytes=0-9",
+  });
+  const read2 = await sandbox.files.readBytes(file2);
+  let read3 = new Uint8Array();
+  for await (const chunk of sandbox.files.readBytesStream(file3)) {
+    const merged = new Uint8Array(read3.length + chunk.length);
+    merged.set(read3, 0);
+    merged.set(chunk, read3.length);
+    read3 = merged;
+  }
+
+  expect(read1).toBe(content);
+  expect(new TextDecoder("utf-8").decode(read2)).toBe(content);
+  expect(new TextDecoder("utf-8").decode(read3)).toBe(content);
+  expect(read1Partial).toBe(content.slice(0, 10));
+
+  await sandbox.files.setPermissions([
+    { path: file1, mode: 755, owner: ownerName, group: groupName },
+    { path: file2, mode: 600, owner: ownerName, group: groupName },
+  ]);
+  const perms = await sandbox.files.getFileInfo([file1, file2]);
+  expect(perms[file1]?.mode).toBe(755);
+  expect(perms[file1]?.owner).toBe(ownerName);
+  expect(perms[file1]?.group).toBe(groupName);
+  expect(perms[file2]?.mode).toBe(600);
+
+  const updated1 = `${content}\nAppended line to file1`;
+  const updated2 = `${content}\nAppended line to file2`;
+  await new Promise((r) => setTimeout(r, 50));
+  await sandbox.files.writeFiles([
+    { path: file1, data: updated1, mode: 644 },
+    { path: file2, data: updated2, mode: 755 },
+  ]);
+  expect(await sandbox.files.readFile(file1)).toBe(updated1);
+  expect(await sandbox.files.readFile(file2)).toBe(updated2);
+
+  await new Promise((r) => setTimeout(r, 50));
+  await sandbox.files.replaceContents([
+    {
+      path: file1,
+      oldContent: "Appended line to file1",
+      newContent: "Replaced line in file1",
+    },
+  ]);
+  const replaced = await sandbox.files.readFile(file1);
+  expect(replaced.includes("Replaced line in file1")).toBe(true);
+  expect(replaced.includes("Appended line to file1")).toBe(false);
+
+  const movedPath = `${dir2}/moved_file3.txt`;
+  await sandbox.files.moveFiles([{ src: file3, dest: movedPath }]);
+  expect(await sandbox.files.readFile(movedPath)).toBe(content);
+
+  await sandbox.files.deleteFiles([file2]);
+  await expect(sandbox.files.readFile(file2)).rejects.toBeTruthy();
+
+  await sandbox.files.deleteDirectories([dir1, dir2]);
+  const verify = await sandbox.commands.run(
+    `test ! -d ${dir1} && test ! -d ${dir2} && echo OK`,
+    { workingDirectory: "/tmp" }
+  );
+  expect(verify.error).toBeUndefined();
+  expect(verify.logs.stdout[0]?.text).toBe("OK");
+});
+
+test("04 interrupt command", async () => {
+  if (!sandbox) throw new Error("sandbox not created");
+
+  const initEvents: ExecutionInit[] = [];
+  const completed: ExecutionComplete[] = [];
+  const errors: ExecutionError[] = [];
+  let initResolve: ((v: ExecutionInit) => void) | null = null;
+  const initPromise = new Promise<ExecutionInit>((r) => (initResolve = r));
+
+  const handlers: ExecutionHandlers = {
+    onInit: (i) => {
+      initEvents.push(i);
+      initResolve?.(i);
+    },
+    onExecutionComplete: (c) => {
+      completed.push(c);
+    },
+    onError: (e) => {
+      errors.push(e);
+    },
+  };
+
+  const task = sandbox.commands.run("sleep 30", undefined, handlers);
+  const init = await initPromise;
+  expect(init.id).toBeTruthy();
+  assertRecentTimestampMs(init.timestamp);
+
+  await sandbox.commands.interrupt(init.id);
+  const exec = await task;
+  expect(exec.id).toBe(init.id);
+  expect(completed.length > 0 || errors.length > 0).toBe(true);
+});
+
+test("05 sandbox pause + resume", async () => {
+  if (!sandbox) throw new Error("sandbox not created");
+
+  await new Promise((r) => setTimeout(r, 20_000));
+  await sandbox.pause();
+
+  let state = "Pausing";
+  for (let i = 0; i < 300; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const info = await sandbox.getInfo();
+    state = info.status.state;
+    if (state !== "Pausing") break;
+  }
+  expect(state).toBe("Paused");
+
+  // pause => unhealthy
+  let healthy = true;
+  for (let i = 0; i < 10; i++) {
+    healthy = await sandbox.isHealthy();
+    if (!healthy) break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  expect(healthy).toBe(false);
+
+  sandbox = await sandbox.resume({
+    readyTimeoutSeconds: 60,
+    healthCheckPollingInterval: 200,
+  });
+
+  let ok = false;
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    ok = await sandbox.isHealthy();
+    if (ok) break;
+  }
+  expect(ok).toBe(true);
+
+  const echo = await sandbox.commands.run("echo resume-ok");
+  expect(echo.error).toBeUndefined();
+  expect(echo.logs.stdout[0]?.text).toBe("resume-ok");
+});

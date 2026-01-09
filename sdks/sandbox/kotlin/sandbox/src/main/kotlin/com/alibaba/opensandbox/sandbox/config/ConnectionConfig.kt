@@ -66,11 +66,16 @@ class ConnectionConfig private constructor(
 
     fun getBaseUrl(): String {
         val currentDomain = getDomain()
-        // Allow domain to override protocol if it explicitly starts with a scheme
+        // Python semantics:
+        // - If `domain` includes a scheme, treat it as a full base URL (without `/v1`) and append `/v1`.
+        // - If `domain` does not include a scheme, build `protocol://domain/v1`.
+        // Also normalize trailing slashes and avoid duplicating `/v1`.
         if (currentDomain.startsWith("http://") || currentDomain.startsWith("https://")) {
-            return currentDomain
+            val trimmed = currentDomain.removeSuffix("/")
+            return if (trimmed.endsWith("/$API_VERSION")) trimmed else "$trimmed/$API_VERSION"
         }
-        return "$protocol://$currentDomain/$API_VERSION"
+        val trimmed = currentDomain.removeSuffix("/")
+        return if (trimmed.endsWith("/$API_VERSION")) "$protocol://${trimmed.removeSuffix("/$API_VERSION")}/$API_VERSION" else "$protocol://$trimmed/$API_VERSION"
     }
 
     /**
@@ -91,8 +96,8 @@ class ConnectionConfig private constructor(
      *   and will **not** be evicted by the SDK on close.
      *
      * ### Notes
-     * - `domain` may include a scheme (e.g. `https://example.com`); in that case the SDK will use it
-     *   as-is and ignore [protocol] when constructing the base URL.
+     * - `domain` may include a scheme (e.g. `https://example.com`); in that case the SDK will ignore [protocol]
+     *   and append `/$API_VERSION` automatically when constructing the base URL.
      */
     class Builder internal constructor() {
         private var apiKey: String? = null

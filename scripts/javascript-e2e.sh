@@ -1,0 +1,53 @@
+#!/bin/bash
+# Copyright 2025 Alibaba Group Holding Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+set -euxo pipefail
+
+TAG=${TAG:-latest}
+
+# build execd image locally
+cd components/execd && docker build -t opensandbox/execd:${TAG} .
+cd ../..
+
+# prepare required images from registry
+docker pull opensandbox/code-interpreter:${TAG}
+
+# setup server
+cd server
+uv sync && uv run python -m src.main > server.log 2>&1 &
+cd ..
+
+# wait for server
+sleep 10
+
+# run JavaScript/TypeScript e2e (SDK builds are handled by the test script)
+cd tests/javascript
+
+# Pin pnpm via corepack (repo expects pnpm@9.x)
+corepack enable
+corepack prepare pnpm@9.15.0 --activate
+
+pnpm install
+
+# Ensure SDK workspace deps exist before running build steps (CI does not have prebuilt node_modules).
+pnpm -C ../../sdks install --frozen-lockfile
+
+# Align with other E2E jobs: local server does not require API key by default.
+# Ensure tests do not send an auth header.
+export OPENSANDBOX_TEST_API_KEY=""
+export OPENSANDBOX_SANDBOX_DEFAULT_IMAGE="opensandbox/code-interpreter:${TAG}"
+
+pnpm test:ci
+

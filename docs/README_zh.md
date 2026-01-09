@@ -17,7 +17,7 @@ OpenSandbox 是一个面向 AI 应用场景设计的「通用沙箱平台」，�
 
 ## 核心特性
 
-- **多语言 SDK**：提供 Python、Java、TypeScript (Roadmap)、Go (Roadmap) 等语言的客户端 SDK。
+- **多语言 SDK**：提供 Python、Java/Kotlin、JavaScript/TypeScript 等语言的客户端 SDK，Go SDK 仍在规划中。
 - **沙箱协议**：定义了沙箱生命周期管理 API 和沙箱执行 API。你可以通过这些沙箱协议扩展自己的沙箱运行时。
 - **沙箱运行时**：默认实现沙箱生命周期管理，支持 Docker 和 Kubernetes 运行时，实现大规模分布式沙箱调度。
 - **沙箱环境**：内置 Command、Filesystem、Code Interpreter 实现。并提供 Coding Agent（Claude Code 等）、浏览器自动化（Chrome、Playwright）和桌面环境（VNC、VS Code）等示例。
@@ -191,8 +191,8 @@ OpenSandbox 提供了丰富的示例来演示不同场景下的沙箱使用方�
 
 - [docs/architecture.md](architecture.md) – 整体架构 & 设计理念
 - SDK
-  - Sandbox 基础 SDK（[Java\Kotlin SDK](../sdks/sandbox/kotlin/README_zh.md)、[Python SDK](../sdks/sandbox/python/README_zh.md)）-包含沙箱生命周期、命令执行、文件操作
-  - Code Interpreter SDK（[Java\Kotlin SDK](../sdks/code-interpreter/kotlin/README_zh.md) 、[Python SDK](../sdks/code-interpreter/python/README_zh.md)）- 代码解释器
+  - Sandbox 基础 SDK（[Java\Kotlin SDK](../sdks/sandbox/kotlin/README_zh.md)、[Python SDK](../sdks/sandbox/python/README_zh.md)、[JavaScript/TypeScript SDK](../sdks/sandbox/javascript/README_zh.md)）- 包含沙箱生命周期、命令执行、文件操作
+  - Code Interpreter SDK（[Java\Kotlin SDK](../sdks/code-interpreter/kotlin/README_zh.md) 、[Python SDK](../sdks/code-interpreter/python/README_zh.md)、[JavaScript/TypeScript SDK](../sdks/code-interpreter/javascript/README_zh.md)）- 代码解释器
 - [specs/README.md](../specs/README_zh.md) - 包含沙箱生命周期 API 和沙箱执行 API 的 OpenAPI 定义
 - [server/README.md](../server/README_zh.md) - 包含沙箱 Server 的启动和配置，目前支持 Docker Runtime，后续将支持 Kubernetes Runtime
 
@@ -206,7 +206,6 @@ OpenSandbox 提供了丰富的示例来演示不同场景下的沙箱使用方�
 
 ### SDK
 
-- [ ] **TypeScript SDK** - TypeScript/JavaScript 客户端 SDK，用于沙箱生命周期管理、命令执行和文件操作
 - [ ] **Go SDK** - Go 客户端 SDK，用于沙箱生命周期管理、命令执行和文件操作
 
 ### Server Runtime

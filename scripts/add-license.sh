@@ -143,7 +143,7 @@ style_for_file() {
 
   case "$ext" in
     sh|py|toml|tf|sql) echo "line:#"; return ;;
-    go|java|kt|kts|ts|tsx|js|jsx) echo "line://"; return ;;
+    go|java|kt|kts|ts|tsx|js|jsx|mjs|cjs|mts|cts) echo "line://"; return ;;
     css) echo "block:css"; return ;;
     html) echo "block:html"; return ;;
   esac
@@ -207,7 +207,11 @@ process_file() {
 
 main() {
   local files
-  IFS=$'\n' read -r -d '' -a files < <(git ls-files && printf '\0')
+  if [[ "$#" -gt 0 ]]; then
+    IFS=$'\n' read -r -d '' -a files < <(git ls-files -- "$@" && printf '\0')
+  else
+    IFS=$'\n' read -r -d '' -a files < <(git ls-files && printf '\0')
+  fi
   for f in "${files[@]}"; do
     process_file "$f"
   done

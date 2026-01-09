@@ -18,7 +18,7 @@ OpenSandbox is a **universal sandbox platform** for AI application scenarios, pr
 
 ## Features
 
-- **Multi-language SDKs**: Provides sandbox SDKs in Python, Java, TypeScript (Roadmap),Go(Roadmap) and other languages.
+- **Multi-language SDKs**: Provides sandbox SDKs in Python, Java/Kotlin, JavaScript/TypeScript, Go (Roadmap), and more.
 - **Sandbox Protocol**: Defines sandbox lifecycle management API and sandbox execution API. You can extend your own sandbox runtime through these sandbox protocols.
 - **Sandbox Runtime**: Implements sandbox lifecycle management by default, supports Docker and Kubernetes runtimes, enabling large-scale distributed sandbox scheduling.
 - **Sandbox Environments**: Built-in implementations for Command, Filesystem, Code Interpreter. And provides examples for Coding Agents (Claude Code, etc.), Browser automation (Chrome, Playwright), and Desktop environments (VNC, VS Code).
@@ -192,8 +192,8 @@ For detailed architecture, see [docs/architecture.md](docs/architecture.md).
 
 - [docs/architecture.md](docs/architecture.md) – Overall architecture & design philosophy
 - SDK
-  - Sandbox base SDK ([Java\Kotlin SDK](sdks/sandbox/kotlin/README.md), [Python SDK](sdks/sandbox/python/README.md)) - includes sandbox lifecycle, command execution, file operations
-  - Code Interpreter SDK ([Java\Kotlin SDK](sdks/code-interpreter/kotlin/README.md), [Python SDK](sdks/code-interpreter/python/README.md)) - code interpreter
+  - Sandbox base SDK ([Java\Kotlin SDK](sdks/sandbox/kotlin/README.md), [Python SDK](sdks/sandbox/python/README.md), [JavaScript/TypeScript SDK](sdks/sandbox/javascript/README.md)) - includes sandbox lifecycle, command execution, file operations
+  - Code Interpreter SDK ([Java\Kotlin SDK](sdks/code-interpreter/kotlin/README.md), [Python SDK](sdks/code-interpreter/python/README.md), [JavaScript/TypeScript SDK](sdks/code-interpreter/javascript/README.md)) - code interpreter
 - [specs/README.md](specs/README.md) - Contains OpenAPI definitions for sandbox lifecycle API and sandbox execution API
 - [server/README.md](server/README.md) - Contains sandbox server startup and configuration, currently supports Docker Runtime, will support Kubernetes Runtime in the future
 
@@ -207,7 +207,6 @@ You can use OpenSandbox for personal or commercial projects in compliance with t
 
 ### SDK
 
-- [ ] **TypeScript SDK** - TypeScript/JavaScript client SDK for sandbox lifecycle management and command execution, file operations.
 - [ ] **Go SDK** - Go client SDK for sandbox lifecycle management and command execution, file operations.
 
 ### Server Runtime

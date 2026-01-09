@@ -1,0 +1,46 @@
+{
+  "name": "@alibaba-group/opensandbox-code-interpreter",
+  "version": "0.1.0-dev2",
+  "description": "OpenSandbox Code Interpreter TypeScript/JavaScript SDK",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "browser": "./dist/index.js",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alibaba/OpenSandbox.git"
+  },
+  "bugs": {
+    "url": "https://github.com/alibaba/OpenSandbox/issues"
+  },
+  "homepage": "https://github.com/alibaba/OpenSandbox",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src --max-warnings 0",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@alibaba-group/opensandbox": "workspace:^"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "eslint": "^9.39.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.52.0"
+  }
+}
