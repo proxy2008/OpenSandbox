@@ -239,7 +239,7 @@ func (c *Controller) listAllContexts() ([]CodeContext, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	var contexts []CodeContext
+	contexts := make([]CodeContext, 0)
 	for session, kernel := range c.jupyterClientMap {
 		if kernel != nil {
 			contexts = append(contexts, CodeContext{
@@ -263,7 +263,7 @@ func (c *Controller) listLanguageContexts(language Language) ([]CodeContext, err
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	var contexts []CodeContext
+	contexts := make([]CodeContext, 0)
 	for session, kernel := range c.jupyterClientMap {
 		if kernel != nil && kernel.language == language {
 			contexts = append(contexts, CodeContext{
