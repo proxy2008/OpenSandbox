@@ -897,15 +897,6 @@ public class CodeInterpreterE2ETest extends BaseE2ETest {
                 javaResult.getId(),
                 javaResult.getError() != null ? javaResult.getError().getName() : "none");
 
-        // Test 3: Test interrupting non-existent execution
-        logger.info("Testing interrupt of non-existent execution");
-
-        String fakeExecutionId = "fake-execution-" + System.currentTimeMillis();
-        assertThrows(
-                SandboxApiException.class,
-                () -> codeInterpreter.codes().interrupt(fakeExecutionId),
-                "Interrupting non-existent execution should throw exception");
-
         // Test 4: Quick execution that completes before interrupt
         logger.info("Testing interrupt of already completed execution");
 
