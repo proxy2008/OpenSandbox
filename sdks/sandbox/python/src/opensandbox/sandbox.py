@@ -358,6 +358,7 @@ class Sandbox:
         resource: dict[str, str] | None = None,
         extensions: dict[str, str] | None = None,
         entrypoint: list[str] | None = None,
+        volume_mounts: list["VolumeMount"] | None = None,
         connection_config: ConnectionConfig | None = None,
         health_check: Callable[["Sandbox"], Awaitable[bool]] | None = None,
         health_check_polling_interval: timedelta = timedelta(milliseconds=200),
@@ -376,6 +377,8 @@ class Sandbox:
             extensions: Opaque extension parameters passed through to the server as-is.
                 Prefer namespaced keys (e.g. ``storage.id``).
             entrypoint: Command to run as entrypoint
+            volume_mounts: Volume mounts to bind host paths into the sandbox container.
+                Allows sharing files/directories between host and container.
             connection_config: Connection configuration
             health_check: Custom async health check function
             health_check_polling_interval: Time between health check attempts
@@ -393,6 +396,7 @@ class Sandbox:
         metadata = metadata or {}
         resource = resource or {"cpu": "1", "memory": "2Gi"}
         extensions = extensions or {}
+        volume_mounts = volume_mounts or []
 
         if isinstance(image, str):
             image = SandboxImageSpec(image=image)
@@ -414,6 +418,7 @@ class Sandbox:
                 timeout,
                 resource,
                 extensions,
+                volume_mounts,
             )
             sandbox_id = response.id
 

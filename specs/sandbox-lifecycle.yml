@@ -639,6 +639,46 @@ components:
           additionalProperties: false
 
       additionalProperties: false
+    VolumeMount:
+      type: object
+      description: |
+        Volume mount specification for binding host paths into the sandbox.
+
+        Allows mounting files or directories from the host into the sandbox container.
+        Similar to Docker's --volume or -v flag.
+
+        **Security Note**: Volume mounts bypass container isolation. Only mount trusted directories.
+      properties:
+        hostPath:
+          type: string
+          description: |
+            Absolute path on the host filesystem to mount from.
+            Relative paths will be resolved against the server's current working directory.
+            The path must exist on the host at the time of sandbox creation.
+          examples:
+            - "/host/data"
+            - "./local-dir"
+            - "/tmp/workspace"
+
+        containerPath:
+          type: string
+          description: |
+            Absolute path inside the container where the volume will be mounted.
+            Must start with "/".
+          examples:
+            - "/data"
+            - "/workspace"
+            - "/app/config"
+
+        readOnly:
+          type: boolean
+          description: |
+            Mount the volume as read-only (write access is prohibited).
+            Default: false
+          default: false
+
+      required: [hostPath, containerPath]
+      additionalProperties: false
     CreateSandboxRequest:
       type: object
       required: [image, timeout, resourceLimits, entrypoint]
@@ -709,6 +749,29 @@ components:
           example:
             - "python"
             - "/app/main.py"
+
+        volumeMounts:
+          type: array
+          description: |
+            Volume mounts to bind host paths into the sandbox container.
+            Allows sharing files/directories between host and container.
+
+            **Security Warning**: Volume mounts bypass container filesystem isolation.
+            Only mount trusted directories. Avoid mounting sensitive host paths.
+
+            **Path Resolution**:
+            - Absolute paths (e.g., "/host/data") are used as-is
+            - Relative paths (e.g., "./local-dir") are resolved against server's working directory
+            - Host path must exist at sandbox creation time
+          items:
+            $ref: '#/components/schemas/VolumeMount'
+          example:
+            - hostPath: "/host/workspace"
+              containerPath: "/workspace"
+              readOnly: false
+            - hostPath: "./config"
+              containerPath: "/app/config"
+              readOnly: true
 
         extensions:
           type: object

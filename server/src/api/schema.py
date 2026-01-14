@@ -20,9 +20,59 @@ for request/response validation and serialization.
 """
 
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field, RootModel
+from pydantic import BaseModel, Field, field_validator, RootModel
+
+
+# ============================================================================
+# Volume Mount
+# ============================================================================
+
+class VolumeMount(BaseModel):
+    """
+    Volume mount specification for binding host paths into the sandbox.
+
+    Allows mounting files or directories from the host into the sandbox container.
+    Similar to Docker's --volume or -v flag.
+    """
+    host_path: str = Field(
+        ...,
+        description="Absolute path on the host filesystem to mount from",
+        examples=["/host/data", "./local-dir", "/tmp/workspace"],
+    )
+    container_path: str = Field(
+        ...,
+        description="Absolute path inside the container where the volume will be mounted",
+        examples=["/data", "/workspace", "/app/config"],
+    )
+    read_only: bool = Field(
+        False,
+        alias="readOnly",
+        description="Mount the volume as read-only (write access is prohibited)",
+    )
+
+    @field_validator('host_path')
+    @classmethod
+    def validate_host_path(cls, v: str) -> str:
+        """Validate that host_path is not empty."""
+        if not v or not v.strip():
+            raise ValueError("host_path cannot be empty")
+        return v
+
+    @field_validator('container_path')
+    @classmethod
+    def validate_container_path(cls, v: str) -> str:
+        """Validate that container_path is absolute and not empty."""
+        if not v or not v.strip():
+            raise ValueError("container_path cannot be empty")
+        if not v.startswith('/'):
+            raise ValueError("container_path must be an absolute path starting with '/'")
+        return v
+
+    class Config:
+        populate_by_name = True
 
 
 # ============================================================================
@@ -133,6 +183,11 @@ class CreateSandboxRequest(BaseModel):
         min_length=1,
         description="The command to execute as the sandbox's entry process",
         example=["python", "/app/main.py"],
+    )
+    volume_mounts: Optional[List[VolumeMount]] = Field(
+        None,
+        alias="volumeMounts",
+        description="Volume mounts to bind host paths into the sandbox container",
     )
     extensions: Optional[Dict[str, str]] = Field(
         None,

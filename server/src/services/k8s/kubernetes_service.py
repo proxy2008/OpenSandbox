@@ -37,6 +37,7 @@ from src.api.schema import (
     RenewSandboxExpirationResponse,
     Sandbox,
     SandboxStatus,
+    VolumeMount,
 )
 from src.config import AppConfig, get_config
 from src.services.constants import (
@@ -271,6 +272,7 @@ class KubernetesSandboxService(SandboxService):
                 labels=labels,
                 expires_at=expires_at,
                 execd_image=self.execd_image,
+                volume_mounts=request.volume_mounts,
             )
             
             logger.info(

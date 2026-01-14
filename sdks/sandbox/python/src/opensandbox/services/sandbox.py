@@ -31,6 +31,7 @@ from opensandbox.models.sandboxes import (
     SandboxInfo,
     SandboxRenewResponse,
 )
+from opensandbox.models.volume_mount import VolumeMount
 
 
 class Sandboxes(Protocol):
@@ -50,6 +51,7 @@ class Sandboxes(Protocol):
         timeout: timedelta,
         resource: dict[str, str],
         extensions: dict[str, str],
+        volume_mounts: list[VolumeMount] | None = None,
     ) -> SandboxCreateResponse:
         """
         Create a new sandbox with the specified configuration.
@@ -63,6 +65,7 @@ class Sandboxes(Protocol):
             resource: Runtime resource limits (e.g. cpu/memory). Exact semantics are server-defined.
             extensions: Opaque extension parameters passed through to the server as-is.
                 Prefer namespaced keys (e.g. ``storage.id``).
+            volume_mounts: Volume mounts to bind host paths into the sandbox container.
 
         Returns:
             Sandbox create response

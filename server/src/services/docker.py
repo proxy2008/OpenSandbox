@@ -53,6 +53,7 @@ from src.api.schema import (
     RenewSandboxExpirationResponse,
     Sandbox,
     SandboxStatus,
+    VolumeMount,
 )
 from src.config import AppConfig, get_config
 from src.services.constants import (
@@ -481,6 +482,65 @@ class DockerSandboxService(SandboxService):
             createdAt=created_at,
         )
 
+    def _validate_and_prepare_volume_mounts(
+        self,
+        volume_mounts: Optional[List[VolumeMount]],
+        sandbox_id: str,
+    ) -> Dict[str, Dict[str, str]]:
+        """
+        Validate and prepare volume mounts for Docker container.
+
+        Args:
+            volume_mounts: List of volume mount specifications
+            sandbox_id: Sandbox identifier for logging
+
+        Returns:
+            Dict with volume bindings in Docker format: {host_path: {"bind": container_path, "mode": "rw"|"ro"}}
+
+        Raises:
+            HTTPException: If volume mounts are invalid
+        """
+        if not volume_mounts:
+            return {}
+
+        binds = {}
+        for mount in volume_mounts:
+            # Resolve relative paths against current working directory
+            host_path = mount.host_path
+            if not os.path.isabs(host_path):
+                # Convert relative path to absolute
+                host_path = os.path.abspath(host_path)
+                logger.debug(
+                    "sandbox=%s | Resolved relative host path '%s' to '%s'",
+                    sandbox_id,
+                    mount.host_path,
+                    host_path,
+                )
+
+            # Validate host path exists (for files and directories)
+            if not os.path.exists(host_path):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "code": SandboxErrorCodes.INVALID_VOLUME_MOUNT,
+                        "message": f"Host path does not exist: {host_path}",
+                    },
+                )
+
+            # Prepare bind specification
+            mode = "ro" if mount.read_only else "rw"
+            binds[host_path] = {"bind": mount.container_path, "mode": mode}
+
+            logger.info(
+                "sandbox=%s | Volume mount: host=%s -> container=%s (mode=%s)",
+                sandbox_id,
+                host_path,
+                mount.container_path,
+                mode,
+            )
+
+        return binds
+
     def _ensure_directory(self, container, path: str, sandbox_id: Optional[str] = None) -> None:
         """Create a directory within the target container if it does not exist."""
         if not path or path == "/":
@@ -784,6 +844,12 @@ class DockerSandboxService(SandboxService):
         mem_limit = parse_memory_limit(resource_limits.get("memory"))
         nano_cpus = parse_nano_cpus(resource_limits.get("cpu"))
 
+        # Prepare volume mounts
+        volume_binds = self._validate_and_prepare_volume_mounts(
+            request.volume_mounts,
+            sandbox_id,
+        )
+
         host_config_kwargs: Dict[str, Any] = {"network_mode": self.network_mode}
         security_opts: list[str] = []
         docker_cfg = self.app_config.docker
@@ -803,6 +869,8 @@ class DockerSandboxService(SandboxService):
             host_config_kwargs["mem_limit"] = mem_limit
         if nano_cpus:
             host_config_kwargs["nano_cpus"] = nano_cpus
+        if volume_binds:
+            host_config_kwargs["binds"] = volume_binds
 
         exposed_ports: Optional[list[str]] = None
         if self.network_mode == BRIDGE_NETWORK_MODE:

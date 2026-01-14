@@ -31,6 +31,7 @@ from src.api.schema import (
     Sandbox,
     SandboxFilter,
     SandboxStatus,
+    VolumeMount,
 )
 
 
@@ -379,3 +380,201 @@ def test_async_worker_cleans_up_leftover_container_on_failure(mock_docker):
 
     service._cleanup_failed_containers.assert_called_once_with(sandbox_id)
     assert service._pending_sandboxes[sandbox_id].status.state == "Failed"
+
+
+@patch("src.services.docker.docker")
+def test_create_sandbox_with_volume_mounts(mock_docker, tmp_path):
+    """Test creating a sandbox with volume mounts."""
+    import tempfile
+    import os
+
+    mock_client = MagicMock()
+    mock_client.containers.list.return_value = []
+    mock_client.api.create_host_config.return_value = {"host": "cfg"}
+    mock_client.api.create_container.return_value = {"Id": "cid"}
+    mock_client.containers.get.return_value = MagicMock()
+    mock_docker.from_env.return_value = mock_client
+
+    service = DockerSandboxService(config=_app_config())
+
+    # Create temporary directory for testing
+    temp_dir = tempfile.mkdtemp()
+    try:
+        request = CreateSandboxRequest(
+            image=ImageSpec(uri="python:3.11"),
+            timeout=120,
+            resourceLimits=ResourceLimits(root={}),
+            env={},
+            metadata={},
+            entrypoint=["python"],
+            volumeMounts=[
+                VolumeMount(
+                    host_path=temp_dir,
+                    container_path="/workspace",
+                    read_only=False,
+                ),
+            ],
+        )
+
+        with patch.object(service, "_ensure_image_available"), patch.object(
+            service, "_prepare_sandbox_runtime"
+        ):
+            service.create_sandbox(request)
+
+        host_kwargs = mock_client.api.create_host_config.call_args.kwargs
+        assert "binds" in host_kwargs
+        binds = host_kwargs["binds"]
+        assert temp_dir in binds
+        assert binds[temp_dir]["bind"] == "/workspace"
+        assert binds[temp_dir]["mode"] == "rw"
+
+    finally:
+        # Clean up temporary directory
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@patch("src.services.docker.docker")
+def test_create_sandbox_with_read_only_volume_mount(mock_docker, tmp_path):
+    """Test creating a sandbox with read-only volume mount."""
+    import tempfile
+
+    mock_client = MagicMock()
+    mock_client.containers.list.return_value = []
+    mock_client.api.create_host_config.return_value = {"host": "cfg"}
+    mock_client.api.create_container.return_value = {"Id": "cid"}
+    mock_client.containers.get.return_value = MagicMock()
+    mock_docker.from_env.return_value = mock_client
+
+    service = DockerSandboxService(config=_app_config())
+
+    # Create temporary directory for testing
+    temp_dir = tempfile.mkdtemp()
+    try:
+        request = CreateSandboxRequest(
+            image=ImageSpec(uri="python:3.11"),
+            timeout=120,
+            resourceLimits=ResourceLimits(root={}),
+            env={},
+            metadata={},
+            entrypoint=["python"],
+            volumeMounts=[
+                VolumeMount(
+                    host_path=temp_dir,
+                    container_path="/readonly",
+                    read_only=True,
+                ),
+            ],
+        )
+
+        with patch.object(service, "_ensure_image_available"), patch.object(
+            service, "_prepare_sandbox_runtime"
+        ):
+            service.create_sandbox(request)
+
+        host_kwargs = mock_client.api.create_host_config.call_args.kwargs
+        assert "binds" in host_kwargs
+        binds = host_kwargs["binds"]
+        assert binds[temp_dir]["bind"] == "/readonly"
+        assert binds[temp_dir]["mode"] == "ro"
+
+    finally:
+        # Clean up temporary directory
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@patch("src.services.docker.docker")
+def test_create_sandbox_rejects_invalid_volume_mount(mock_docker):
+    """Test that creating a sandbox with non-existent host path fails."""
+    mock_client = MagicMock()
+    mock_client.containers.list.return_value = []
+    mock_docker.from_env.return_value = mock_client
+
+    service = DockerSandboxService(config=_app_config())
+
+    request = CreateSandboxRequest(
+        image=ImageSpec(uri="python:3.11"),
+        timeout=120,
+        resourceLimits=ResourceLimits(root={}),
+        env={},
+        metadata={},
+        entrypoint=["python"],
+        volumeMounts=[
+            VolumeMount(
+                host_path="/nonexistent/path/that/does/not/exist",
+                container_path="/data",
+                read_only=False,
+            ),
+        ],
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        service.create_sandbox(request)
+
+    assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
+    assert exc.value.detail["code"] == SandboxErrorCodes.INVALID_VOLUME_MOUNT
+    mock_client.containers.create.assert_not_called()
+
+
+@patch("src.services.docker.docker")
+def test_create_sandbox_with_relative_path_volume_mount(mock_docker, tmp_path):
+    """Test that relative paths in volume mounts are resolved to absolute paths."""
+    import tempfile
+    import os
+
+    mock_client = MagicMock()
+    mock_client.containers.list.return_value = []
+    mock_client.api.create_host_config.return_value = {"host": "cfg"}
+    mock_client.api.create_container.return_value = {"Id": "cid"}
+    mock_client.containers.get.return_value = MagicMock()
+    mock_docker.from_env.return_value = mock_client
+
+    service = DockerSandboxService(config=_app_config())
+
+    # Create a temporary directory and change to it
+    original_cwd = os.getcwd()
+    temp_dir = tempfile.mkdtemp()
+
+    try:
+        os.chdir(temp_dir)
+
+        # Create a test subdirectory
+        test_subdir = os.path.join(temp_dir, "test_data")
+        os.makedirs(test_subdir)
+
+        request = CreateSandboxRequest(
+            image=ImageSpec(uri="python:3.11"),
+            timeout=120,
+            resourceLimits=ResourceLimits(root={}),
+            env={},
+            metadata={},
+            entrypoint=["python"],
+            volumeMounts=[
+                VolumeMount(
+                    host_path="./test_data",  # Relative path
+                    container_path="/workspace",
+                    read_only=False,
+                ),
+            ],
+        )
+
+        with patch.object(service, "_ensure_image_available"), patch.object(
+            service, "_prepare_sandbox_runtime"
+        ):
+            service.create_sandbox(request)
+
+        host_kwargs = mock_client.api.create_host_config.call_args.kwargs
+        assert "binds" in host_kwargs
+        binds = host_kwargs["binds"]
+
+        # The relative path should be resolved to absolute path
+        assert test_subdir in binds
+        assert binds[test_subdir]["bind"] == "/workspace"
+        assert binds[test_subdir]["mode"] == "rw"
+
+    finally:
+        os.chdir(original_cwd)
+        # Clean up temporary directory
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)

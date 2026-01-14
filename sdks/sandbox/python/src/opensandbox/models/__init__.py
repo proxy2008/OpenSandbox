@@ -49,6 +49,7 @@ from opensandbox.models.sandboxes import (
     SandboxState,
     SandboxStatus,
 )
+from opensandbox.models.volume_mount import VolumeMount
 
 __all__ = [
     # Execution models
@@ -78,4 +79,6 @@ __all__ = [
     "SandboxMetrics",
     "PagedSandboxInfos",
     "PaginationInfo",
+    # Volume mount models
+    "VolumeMount",
 ]

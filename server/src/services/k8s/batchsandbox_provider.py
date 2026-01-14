@@ -25,10 +25,12 @@ from kubernetes.client import (
     V1EnvVar,
     V1ResourceRequirements,
     V1VolumeMount,
+    V1Volume,
+    V1HostPathVolumeSource,
     ApiException,
 )
 
-from src.api.schema import ImageSpec
+from src.api.schema import ImageSpec, VolumeMount
 from src.services.constants import SANDBOX_ID_LABEL
 from src.services.k8s.batchsandbox_template import BatchSandboxTemplateManager
 from src.services.k8s.client import K8sClient
@@ -75,21 +77,23 @@ class BatchSandboxProvider(WorkloadProvider):
         labels: Dict[str, str],
         expires_at: datetime,
         execd_image: str,
+        volume_mounts: Optional[List[VolumeMount]] = None,
     ) -> Dict[str, Any]:
         """Create a BatchSandbox workload."""
         batchsandbox_name = f"sandbox-{sandbox_id}"
-        
+
         # Build init container for execd installation
         init_container = self._build_execd_init_container(execd_image)
-        
+
         # Build main container with execd support
         main_container = self._build_main_container(
             image_spec=image_spec,
             entrypoint=entrypoint,
             env=env,
             resource_limits=resource_limits,
+            volume_mounts=volume_mounts,
         )
-        
+
         # Build shared volume for execd
         volumes = [
             {
@@ -97,7 +101,19 @@ class BatchSandboxProvider(WorkloadProvider):
                 "emptyDir": {}
             }
         ]
-        
+
+        # Add user-specified volumes
+        if volume_mounts:
+            for idx, mount in enumerate(volume_mounts):
+                volume_name = f"volume-{idx}"
+                # Add volume definition
+                volumes.append({
+                    "name": volume_name,
+                    "hostPath": {
+                        "path": mount.host_path
+                    }
+                })
+
         # Build runtime-generated BatchSandbox manifest
         # This contains only the essential runtime fields
         runtime_manifest = {
@@ -120,10 +136,10 @@ class BatchSandboxProvider(WorkloadProvider):
                 },
             },
         }
-        
+
         # Merge with template to get final manifest
         batchsandbox = self.template_manager.merge_with_runtime_values(runtime_manifest)
-        
+
         # Create BatchSandbox
         created = self.custom_api.create_namespaced_custom_object(
             group=self.group,
@@ -132,7 +148,7 @@ class BatchSandboxProvider(WorkloadProvider):
             plural=self.plural,
             body=batchsandbox,
         )
-        
+
         return {
             "name": created["metadata"]["name"],
             "uid": created["metadata"]["uid"],
@@ -180,25 +196,27 @@ class BatchSandboxProvider(WorkloadProvider):
         entrypoint: List[str],
         env: Dict[str, str],
         resource_limits: Dict[str, str],
+        volume_mounts: Optional[List[VolumeMount]] = None,
     ) -> V1Container:
         """
         Build main container spec with execd support.
-        
+
         The container will use bootstrap script to start execd in background,
         then execute user's command.
-        
+
         Args:
             image_spec: Container image specification
             entrypoint: Container entrypoint command
             env: Environment variables
             resource_limits: Resource limits
-            
+            volume_mounts: Optional list of volume mounts
+
         Returns:
             V1Container: Main container spec
         """
         # Convert env dict to V1EnvVar list
         env_vars = [V1EnvVar(name=k, value=v) for k, v in env.items()]
-        
+
         # Build resource requirements
         resources = None
         if resource_limits:
@@ -206,22 +224,35 @@ class BatchSandboxProvider(WorkloadProvider):
                 limits=resource_limits,
                 requests=resource_limits,  # Set requests = limits for guaranteed QoS
             )
-        
+
+        # Build volume mounts list
+        mounts = [
+            V1VolumeMount(
+                name="opensandbox-bin",
+                mount_path="/opt/opensandbox/execd"
+            )
+        ]
+
+        # Add user-specified volume mounts
+        if volume_mounts:
+            for idx, mount in enumerate(volume_mounts):
+                volume_name = f"volume-{idx}"
+                mounts.append(V1VolumeMount(
+                    name=volume_name,
+                    mount_path=mount.container_path,
+                    read_only=mount.read_only,
+                ))
+
         # Wrap entrypoint with bootstrap script to start execd
         wrapped_command = ["/opt/opensandbox/execd/bootstrap.sh"] + entrypoint
-        
+
         return V1Container(
             name="sandbox",
             image=image_spec.uri,
             command=wrapped_command,
             env=env_vars if env_vars else None,
             resources=resources,
-            volume_mounts=[
-                V1VolumeMount(
-                    name="opensandbox-bin",
-                    mount_path="/opt/opensandbox/execd"
-                )
-            ],
+            volume_mounts=mounts,
         )
     
     def _container_to_dict(self, container: V1Container) -> Dict[str, Any]:

@@ -457,8 +457,152 @@ class TestRenewExpiration:
         
         from src.api.schema import RenewSandboxExpirationRequest
         request = RenewSandboxExpirationRequest(expires_at=past_time)
-        
+
         with pytest.raises(HTTPException) as exc_info:
             k8s_service.renew_expiration("test-sandbox-id", request)
-        
+
         assert exc_info.value.status_code == 400
+
+
+class TestVolumeMounts:
+    """Volume mounts tests for KubernetesSandboxService"""
+
+    def test_create_sandbox_with_volume_mounts_succeeds(
+        self, k8s_service, create_sandbox_request
+    ):
+        """
+        Test case: Successfully create sandbox with volume mounts
+
+        Purpose: Verify that sandbox can be created with volume mounts
+        """
+        from src.api.schema import VolumeMount
+
+        # Add volume mounts to request
+        create_sandbox_request.volume_mounts = [
+            VolumeMount(
+                host_path="/host/workspace",
+                container_path="/workspace",
+                read_only=False,
+            ),
+            VolumeMount(
+                host_path="./config",
+                container_path="/app/config",
+                read_only=True,
+            ),
+        ]
+
+        # Mock workload provider
+        with patch.object(k8s_service, '_wait_for_sandbox_ready') as mock_wait:
+            mock_wait.return_value = {
+                "metadata": {
+                    "name": "sandbox-test-id",
+                    "uid": "test-uid",
+                },
+                "spec": {
+                    "template": {
+                        "spec": {
+                            "containers": [{
+                                "name": "sandbox",
+                            }]
+                        }
+                    }
+                },
+                "status": {
+                    "state": "Running",
+                    "reason": "CONTAINER_RUNNING",
+                    "message": "Sandbox is running",
+                },
+            }
+
+            k8s_service.workload_provider.create_workload.return_value = {
+                "name": "sandbox-test-id",
+                "uid": "test-uid",
+            }
+            k8s_service.workload_provider.get_status.return_value = {
+                "state": "Running",
+                "reason": "CONTAINER_RUNNING",
+                "message": "Sandbox is running",
+                "last_transition_at": datetime.now(timezone.utc),
+            }
+            k8s_service.workload_provider.get_expiration.return_value = (
+                datetime.now(timezone.utc) + timedelta(hours=1)
+            )
+
+            # Create sandbox
+            response = k8s_service.create_sandbox(create_sandbox_request)
+
+            # Verify response
+            assert response.status.state == "Running"
+
+            # Verify workload provider was called with volume_mounts
+            k8s_service.workload_provider.create_workload.assert_called_once()
+            call_kwargs = k8s_service.workload_provider.create_workload.call_args.kwargs
+            assert "volume_mounts" in call_kwargs
+            volume_mounts = call_kwargs["volume_mounts"]
+            assert len(volume_mounts) == 2
+            assert volume_mounts[0].host_path == "/host/workspace"
+            assert volume_mounts[0].container_path == "/workspace"
+            assert volume_mounts[0].read_only is False
+            assert volume_mounts[1].host_path == "./config"
+            assert volume_mounts[1].container_path == "/app/config"
+            assert volume_mounts[1].read_only is True
+
+    def test_create_sandbox_without_volume_mounts_succeeds(
+        self, k8s_service, create_sandbox_request
+    ):
+        """
+        Test case: Successfully create sandbox without volume mounts
+
+        Purpose: Verify that sandbox creation works normally without volume mounts
+        """
+        # Ensure no volume mounts
+        create_sandbox_request.volume_mounts = None
+
+        # Mock workload provider
+        with patch.object(k8s_service, '_wait_for_sandbox_ready') as mock_wait:
+            mock_wait.return_value = {
+                "metadata": {
+                    "name": "sandbox-test-id",
+                    "uid": "test-uid",
+                },
+                "spec": {
+                    "template": {
+                        "spec": {
+                            "containers": [{
+                                "name": "sandbox",
+                            }]
+                        }
+                    }
+                },
+                "status": {
+                    "state": "Running",
+                    "reason": "CONTAINER_RUNNING",
+                    "message": "Sandbox is running",
+                },
+            }
+
+            k8s_service.workload_provider.create_workload.return_value = {
+                "name": "sandbox-test-id",
+                "uid": "test-uid",
+            }
+            k8s_service.workload_provider.get_status.return_value = {
+                "state": "Running",
+                "reason": "CONTAINER_RUNNING",
+                "message": "Sandbox is running",
+                "last_transition_at": datetime.now(timezone.utc),
+            }
+            k8s_service.workload_provider.get_expiration.return_value = (
+                datetime.now(timezone.utc) + timedelta(hours=1)
+            )
+
+            # Create sandbox
+            response = k8s_service.create_sandbox(create_sandbox_request)
+
+            # Verify response
+            assert response.status.state == "Running"
+
+            # Verify workload provider was called with None or empty volume_mounts
+            k8s_service.workload_provider.create_workload.assert_called_once()
+            call_kwargs = k8s_service.workload_provider.create_workload.call_args.kwargs
+            volume_mounts = call_kwargs.get("volume_mounts")
+            assert volume_mounts is None or len(volume_mounts) == 0

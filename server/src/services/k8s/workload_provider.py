@@ -20,17 +20,17 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
-from src.api.schema import ImageSpec
+from src.api.schema import ImageSpec, VolumeMount
 
 
 class WorkloadProvider(ABC):
     """
     Abstract interface for managing Kubernetes workload resources.
-    
+
     This abstraction allows supporting different K8s resource types
     (Pod, Job, StatefulSet, etc.) with a unified interface.
     """
-    
+
     @abstractmethod
     def create_workload(
         self,
@@ -43,10 +43,11 @@ class WorkloadProvider(ABC):
         labels: Dict[str, str],
         expires_at: datetime,
         execd_image: str,
+        volume_mounts: Optional[List[VolumeMount]] = None,
     ) -> Dict[str, Any]:
         """
         Create a new workload resource.
-        
+
         Args:
             sandbox_id: Unique sandbox identifier
             namespace: Kubernetes namespace
@@ -57,10 +58,11 @@ class WorkloadProvider(ABC):
             labels: Labels to apply to the workload
             expires_at: Expiration time
             execd_image: execd daemon image
-            
+            volume_mounts: Optional list of volume mounts
+
         Returns:
             Dict containing workload metadata (name, uid, etc.)
-            
+
         Raises:
             ApiException: If creation fails
         """

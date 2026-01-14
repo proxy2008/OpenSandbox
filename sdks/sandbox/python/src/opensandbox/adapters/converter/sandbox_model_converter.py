@@ -91,6 +91,7 @@ class SandboxModelConverter:
         timeout: timedelta,
         resource: dict[str, str],
         extensions: dict[str, str],
+        volume_mounts: list = None,
     ) -> CreateSandboxRequest:
         """Convert domain parameters to API CreateSandboxRequest."""
         from opensandbox.api.lifecycle.models.create_sandbox_request import (
@@ -125,7 +126,8 @@ class SandboxModelConverter:
             CreateSandboxRequestExtensions.from_dict(extensions) if extensions else UNSET
         )
 
-        return CreateSandboxRequest(
+        # Create the request
+        request = CreateSandboxRequest(
             image=SandboxModelConverter.to_api_image_spec(spec),
             entrypoint=entrypoint,
             env=api_env,
@@ -134,6 +136,20 @@ class SandboxModelConverter:
             resource_limits=api_resource_limits,
             extensions=api_extensions,
         )
+
+        # Add volume_mounts via additional_properties
+        # This is needed because the generated SDK doesn't have volumeMounts yet
+        if volume_mounts:
+            volume_mounts_api = []
+            for mount in volume_mounts:
+                volume_mounts_api.append({
+                    "hostPath": mount.host_path,
+                    "containerPath": mount.container_path,
+                    "readOnly": mount.read_only,
+                })
+            request.additional_properties["volumeMounts"] = volume_mounts_api
+
+        return request
 
     @staticmethod
     def to_api_renew_request(

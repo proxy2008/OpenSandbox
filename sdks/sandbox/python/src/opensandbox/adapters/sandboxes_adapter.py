@@ -47,6 +47,7 @@ from opensandbox.models.sandboxes import (
     SandboxInfo,
     SandboxRenewResponse,
 )
+from opensandbox.models.volume_mount import VolumeMount
 from opensandbox.services.sandbox import Sandboxes
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,7 @@ class SandboxesAdapter(Sandboxes):
         timeout: timedelta,
         resource: dict[str, str],
         extensions: dict[str, str],
+        volume_mounts: list[VolumeMount] | None = None,
     ) -> SandboxCreateResponse:
         """Create a new sandbox instance with the specified configuration."""
         logger.info(f"Creating sandbox with image: {spec.image}")
@@ -130,6 +132,7 @@ class SandboxesAdapter(Sandboxes):
                 timeout=timeout,
                 resource=resource,
                 extensions=extensions,
+                volume_mounts=volume_mounts or [],
             )
 
             client = await self._get_client()
