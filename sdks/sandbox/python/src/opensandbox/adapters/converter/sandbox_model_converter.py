@@ -143,9 +143,9 @@ class SandboxModelConverter:
             volume_mounts_api = []
             for mount in volume_mounts:
                 volume_mounts_api.append({
-                    "hostPath": mount.host_path,
-                    "containerPath": mount.container_path,
-                    "readOnly": mount.read_only,
+                    "host_path": mount.host_path,
+                    "container_path": mount.container_path,
+                    "read_only": mount.read_only,
                 })
             request.additional_properties["volumeMounts"] = volume_mounts_api
 

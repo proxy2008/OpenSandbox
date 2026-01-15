@@ -96,11 +96,11 @@ class VolumeMount(BaseModel):
     model_config = {"populate_by_name": True}
 
     def to_api_format(self) -> dict[str, Any]:
-        """Convert to API request format."""
+        """Convert to API request format (snake_case for server compatibility)."""
         return {
-            "hostPath": self.host_path,
-            "containerPath": self.container_path,
-            "readOnly": self.read_only,
+            "host_path": self.host_path,
+            "container_path": self.container_path,
+            "read_only": self.read_only,
         }
 
     @classmethod

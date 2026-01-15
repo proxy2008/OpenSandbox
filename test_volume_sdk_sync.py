@@ -20,6 +20,22 @@ from opensandbox.exceptions import SandboxException
 import httpx
 
 
+def check_server_connectivity(server_url: str) -> bool:
+    """Check if server is reachable using curl"""
+    import subprocess
+    try:
+        # Try to reach server health endpoint
+        result = subprocess.run(
+            ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+             f"{server_url}/health"],
+            capture_output=True,
+            timeout=5
+        )
+        return result.returncode == 0
+    except:
+        return False
+
+
 def test_volume_mounts_with_sdk_sync():
     """Test volume mounts using synchronous Python SDK"""
 
@@ -40,9 +56,28 @@ def test_volume_mounts_with_sdk_sync():
     print(f"   Container path: {CONTAINER_PATH}")
     print()
 
+    # Check network connectivity first
+    print("🔍 Checking network connectivity...")
+    if not check_server_connectivity(SERVER_URL):
+        print("⚠️  WARNING: Cannot reach server using curl!")
+        print()
+        print("   If you're running from local macOS, this is expected.")
+        print("   Python's httpx library may have connection issues.")
+        print()
+        print("   Solutions:")
+        print("   1. Run this script ON THE SERVER (172.32.153.182)")
+        print("   2. Use the REST API directly with curl (already tested successfully)")
+        print("   3. Check your network/firewall settings")
+        print()
+        print("   Continuing anyway... (will likely fail)")
+        print()
+    else:
+        print("✅ Server is reachable!")
+        print()
+
     # Configure connection with custom timeout
     config = ConnectionConfigSync(
-        base_url=SERVER_URL,
+        domain=SERVER_URL.replace("http://", ""),  # 移除 http:// 前缀
         api_key=API_KEY,
         request_timeout=timedelta(seconds=60),
     )
