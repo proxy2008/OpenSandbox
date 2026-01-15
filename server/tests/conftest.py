@@ -38,6 +38,15 @@ docker.from_env = lambda: _mock_docker_client  # type: ignore
 from src.main import app  # noqa: E402
 
 
+def pytest_configure(config):
+    """
+    Configure pytest with custom markers.
+    """
+    config.addinivalue_line(
+        "markers", "integration: marks tests as integration tests (require Docker)"
+    )
+
+
 @pytest.fixture(scope="session")
 def test_api_key() -> str:
     """
@@ -75,3 +84,39 @@ def sample_sandbox_request() -> dict:
         "metadata": {"name": "Test Sandbox", "project": "test-project"},
         "entrypoint": ["python", "-c", "print('Hello from sandbox')"],
     }
+
+
+@pytest.fixture(scope="session")
+def docker_config():
+    """
+    Fixture providing Docker configuration for integration tests.
+
+    This fixture loads a real Docker configuration for integration tests.
+    """
+    from src.config import AppConfig
+
+    config_path = Path(__file__).resolve().parent / "testdata" / "config.toml"
+    return AppConfig.from_file(str(config_path))
+
+
+@pytest.fixture(scope="function")
+def docker_service(docker_config):
+    """
+    Fixture providing a real DockerSandboxService for integration tests.
+
+    This fixture creates an actual Docker connection and should only be used
+    with tests marked as @pytest.mark.integration
+    """
+    # Undo the mock for integration tests
+    import docker as real_docker
+    real_docker.from_env = real_docker.from_env.__wrapped__ if hasattr(
+        real_docker.from_env, '__wrapped__'
+    ) else real_docker.from_env
+
+    from src.services.docker import DockerSandboxService
+
+    service = DockerSandboxService(config=docker_config)
+
+    yield service
+
+    # Cleanup: don't do anything here, tests should clean up their own sandboxes
