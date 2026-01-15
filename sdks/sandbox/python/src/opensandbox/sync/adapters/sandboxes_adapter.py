@@ -43,6 +43,7 @@ from opensandbox.models.sandboxes import (
     SandboxInfo,
     SandboxRenewResponse,
 )
+from opensandbox.models.volume_mount import VolumeMount
 from opensandbox.sync.services.sandbox import SandboxesSync
 
 logger = logging.getLogger(__name__)
@@ -92,6 +93,7 @@ class SandboxesAdapterSync(SandboxesSync):
         timeout: timedelta,
         resource: dict[str, str],
         extensions: dict[str, str],
+        volume_mounts: list[VolumeMount] | None = None,
     ) -> SandboxCreateResponse:
         logger.info("Creating sandbox with image: %s", spec.image)
         try:
@@ -108,6 +110,7 @@ class SandboxesAdapterSync(SandboxesSync):
                 timeout=timeout,
                 resource=resource,
                 extensions=extensions,
+                volume_mounts=volume_mounts or [],
             )
             response_obj = post_sandboxes.sync_detailed(client=self._get_client(), body=create_request)
             handle_api_error(response_obj, "Create sandbox")
