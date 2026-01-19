@@ -47,7 +47,7 @@ jobs:
           api_key = ""
           [runtime]
           type = "docker"
-          execd_image = "opensandbox/execd:latest"
+          execd_image = "opensandbox/execd:local"
           [docker]
           network_mode = "bridge"
           EOF
@@ -82,7 +82,6 @@ jobs:
 
       - name: Run tests
         env:
-          TAG: latest
           GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-user-home
         run: |
           set -e
@@ -96,7 +95,7 @@ jobs:
           api_key = ""
           [runtime]
           type = "docker"
-          execd_image = "opensandbox/execd:${TAG}"
+          execd_image = "opensandbox/execd:local"
           [docker]
           network_mode = "bridge"
           EOF
@@ -136,8 +135,6 @@ jobs:
         run: pip install uv
 
       - name: Run tests
-        env:
-          TAG: latest
         run: |
           set -e
 
@@ -150,7 +147,7 @@ jobs:
           api_key = ""
           [runtime]
           type = "docker"
-          execd_image = "opensandbox/execd:${TAG}"
+          execd_image = "opensandbox/execd:local"
           [docker]
           network_mode = "bridge"
           EOF
