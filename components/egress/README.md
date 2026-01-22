@@ -48,11 +48,14 @@ The egress control is implemented as a **Sidecar** that shares the network names
   - `GET /policy` — returns the current policy (`null` when allow-all).
   - `POST /policy` — replaces the policy. Empty body clears restrictions (allow-all).
 
-Example:
+Examples:
 
 ```bash
-curl -XPOST http://localhost:18080/policy \
-  -d '{"default_action":"deny","egress":[{"action":"allow","target":"pypi.org"}]}'
+curl -XPOST http://11.167.115.8:18080/policy \
+  -d '{"default_action":"deny","egress":[{"action":"allow","target":"*.bing.com"}]}'
+
+curl -XPOST http://11.167.115.8:18080/policy \
+  -d '{"default_action":"allow","egress":[{"action":"deny","target":"*.bing.com"}]}'
 ```
 
 ## Build & Run
@@ -86,7 +89,7 @@ To test the sidecar with a sandbox application:
     ```bash
     curl -XPOST http://11.167.84.130:18080/policy \
       -H "OPENSANDBOX-EGRESS-AUTH: $OPENSANDBOX_EGRESS_TOKEN" \
-      -d '{"default_action":"deny","egress":[{"action":"allow","target":"*.baidu.com"}]}'
+      -d '{"default_action":"deny","egress":[{"action":"allow","target":"*.bing.com"}]}'
     ```
 
 2.  **Start Application** (shares sidecar's network):

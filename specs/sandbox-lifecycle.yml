@@ -120,6 +120,37 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateSandboxRequest'
+            examples:
+              deny-with-allowlist:
+                summary: Deny by default with allowed domains
+                value:
+                  image:
+                    uri: python:3.11
+                  timeout: 3600
+                  resourceLimits:
+                    cpu: "500m"
+                    memory: "512Mi"
+                  entrypoint: ["python", "/app/main.py"]
+                  networkPolicy:
+                    default_action: deny
+                    egress:
+                      - action: allow
+                        target: "pypi.org"
+              allow-with-denylist:
+                summary: Allow by default with a deny rule
+                value:
+                  image:
+                    uri: python:3.11
+                  timeout: 3600
+                  resourceLimits:
+                    cpu: "500m"
+                    memory: "512Mi"
+                  entrypoint: ["python", "/app/main.py"]
+                  networkPolicy:
+                    default_action: allow
+                    egress:
+                      - action: deny
+                        target: "bad.example.com"
       responses:
         '202':
           description: |
@@ -710,6 +741,13 @@ components:
             - "python"
             - "/app/main.py"
 
+        networkPolicy:
+          $ref: '#/components/schemas/NetworkPolicy'
+          description: |
+            Optional outbound network policy for the sandbox.
+            Shape matches the sidecar `/policy` endpoint. If omitted or empty,
+            the sidecar starts in allow-all mode until updated.
+
         extensions:
           type: object
           additionalProperties:
@@ -793,4 +831,37 @@ components:
             Example: endpoint.opensandbox.io/sandboxes/abc123/port/8080
       required:
         - endpoint
+      additionalProperties: false
+
+    NetworkPolicy:
+      type: object
+      description: |
+        Egress network policy matching the sidecar `/policy` request body.
+        If `default_action` is omitted, the sidecar defaults to "deny"; passing an empty
+        object or null results in allow-all behavior at startup.
+      properties:
+        default_action:
+          type: string
+          enum: [allow, deny]
+          description: Default action when no egress rule matches. Defaults to "deny".
+        egress:
+          type: array
+          description: List of egress rules evaluated in order.
+          items:
+            $ref: '#/components/schemas/NetworkRule'
+      additionalProperties: false
+
+    NetworkRule:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [allow, deny]
+          description: Whether to allow or deny matching targets.
+        target:
+          type: string
+          description: |
+            FQDN or wildcard domain (e.g., "example.com", "*.example.com").
+            IP/CIDR not yet supported in the egress MVP.
+      required: [action, target]
       additionalProperties: false
