@@ -1346,6 +1346,8 @@ class DockerSandboxService(SandboxService):
                     host_config=sidecar_host_config,
                     labels=sidecar_labels,
                     environment=sidecar_env,
+                    # Expose the ports that have host bindings so Docker publishes them in bridge mode.
+                    ports=["44772", "8080"],
                 )
             sidecar_id = sidecar_resp.get("Id")
             if not sidecar_id:
