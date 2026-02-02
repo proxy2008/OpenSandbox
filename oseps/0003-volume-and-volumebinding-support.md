@@ -78,7 +78,7 @@ The core API describes what storage is required using strongly-typed backend def
 
 - Sandbox runtime (Docker/Kubernetes) and storage backend (local/OSS/S3) are independent dimensions. The API is designed so the same SDK request can target different runtimes; if a runtime cannot support a backend, it must return a clear validation error.
 - OSS/S3/GitFS are popular production backends; this proposal keeps the model extensible so these can be supported early by adding new backend structs.
-- The MVP targets Docker with `local` and `oss` backends. Other backends (e.g., `nfs`) are described for future extension and may be unsupported initially.
+- The MVP targets Docker with `local` and `oss` backends, and Kubernetes with `local`, `oss`, and `pvc` backends. Other backends (e.g., `nfs`) are described for future extension and may be unsupported initially.
 - Kubernetes template merging currently replaces lists; this proposal requires list-merge or append behavior for volumes/volumeMounts to preserve user input.
 - Exactly one backend struct must be specified per volume entry; specifying zero or multiple backend structs is a validation error.
 
@@ -113,6 +113,13 @@ volumes:
       accessKeySecret: "SECRETEXAMPLE"
     mountPath: /mnt/data
     accessMode: RW
+
+  # PVC mount (Kubernetes)
+  - name: models
+    pvc:
+      claimName: "shared-models-pvc"
+    mountPath: /mnt/models
+    accessMode: RO
 
   # NFS mount (future)
   - name: shared
@@ -154,20 +161,26 @@ Each backend type is defined as a distinct struct with explicit typed fields:
 
 *Future enhancement: support `credentialRef` for secret references instead of inline credentials.
 
+**`pvc`** - Kubernetes PersistentVolumeClaim mount:
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `claimName` | string | Yes | Name of the PersistentVolumeClaim in the same namespace |
+
 **`nfs`** - NFS mount (future):
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `server` | string | Yes | NFS server hostname or IP |
 | `path` | string | Yes | Absolute export path on the NFS server |
 
-Additional backends (e.g., `s3`, `pvc`) can be added by defining new structs following this pattern.
+Additional backends (e.g., `s3`) can be added by defining new structs following this pattern.
 
 ### Backend constraints
 Validation rules for each backend struct to reduce runtime-only failures:
 
 - **`local`**: `hostPath` must be an absolute path (e.g., `/data/opensandbox/user-a`). Reject relative paths and require normalization before validation.
-- **`nfs`**: `server` must be a valid hostname or IP. `path` must be an absolute path (e.g., `/exports/sandbox`).
 - **`oss`**: `bucket` must be a valid bucket name. `endpoint` must be a valid OSS endpoint. `accessKeyId` and `accessKeySecret` are required unless `credentialRef` is provided (future). The runtime performs the mount during sandbox creation.
+- **`pvc`**: `claimName` must be a valid Kubernetes resource name. The PVC must exist in the same namespace as the sandbox pod; the runtime validates existence at scheduling time.
+- **`nfs`**: `server` must be a valid hostname or IP. `path` must be an absolute path (e.g., `/exports/sandbox`).
 
 These constraints are enforced in request validation and surfaced as clear API errors; runtimes may apply stricter checks.
 
@@ -188,6 +201,7 @@ SubPath provides path-level isolation, not concurrency control. If multiple sand
 - `oss` backend requires the runtime to mount a filesystem (e.g., via ossfs) during sandbox creation using the struct fields. If the runtime does not support OSS mounting, the request is rejected.
 
 ### Kubernetes mapping
+- `pvc` backend maps to Kubernetes `persistentVolumeClaim` volume source: `pvc.claimName` → `volumes[].persistentVolumeClaim.claimName`.
 - `nfs` backend maps to Kubernetes `nfs` volume source: `nfs.server` → `volumes[].nfs.server`, `nfs.path` → `volumes[].nfs.path`.
 - `mountPath` maps to `volumeMounts.mountPath`.
 - `subPath` maps to `volumeMounts.subPath`.
@@ -304,6 +318,69 @@ request = CreateSandboxRequest(
 post_sandboxes.sync(client=client, body=request)
 ```
 
+### Example: Kubernetes PVC mount
+Create a sandbox that mounts an existing PersistentVolumeClaim:
+
+```yaml
+volumes:
+  - name: models
+    pvc:
+      claimName: "shared-models-pvc"
+    mountPath: /mnt/models
+    accessMode: RO
+    subPath: "v1.0"
+```
+
+Runtime mapping (Kubernetes):
+```yaml
+volumes:
+  - name: models
+    persistentVolumeClaim:
+      claimName: shared-models-pvc
+containers:
+  - name: sandbox
+    volumeMounts:
+      - name: models
+        mountPath: /mnt/models
+        readOnly: true  # derived from accessMode=RO
+        subPath: v1.0
+```
+
+Python SDK example (PVC):
+
+```python
+from opensandbox.api.lifecycle.client import AuthenticatedClient
+from opensandbox.api.lifecycle.api.sandboxes import post_sandboxes
+from opensandbox.api.lifecycle.models.create_sandbox_request import CreateSandboxRequest
+from opensandbox.api.lifecycle.models.image_spec import ImageSpec
+from opensandbox.api.lifecycle.models.resource_limits import ResourceLimits
+from opensandbox.api.lifecycle.models.volume import Volume
+from opensandbox.api.lifecycle.models.pvc_backend import PVCBackend
+
+client = AuthenticatedClient(base_url="https://api.opensandbox.io", token="YOUR_API_KEY")
+
+resource_limits = ResourceLimits.from_dict({"cpu": "500m", "memory": "512Mi"})
+request = CreateSandboxRequest(
+    image=ImageSpec(uri="python:3.11"),
+    timeout=3600,
+    resource_limits=resource_limits,
+    entrypoint=["python", "-c", "print('hello')"],
+    volumes=[
+        Volume(
+            name="models",
+            pvc=PVCBackend(
+                claim_name="shared-models-pvc",
+            ),
+            mount_path="/mnt/models",
+            access_mode="RO",
+            sub_path="v1.0",
+        )
+    ],
+)
+
+post_sandboxes.sync(client=client, body=request)
+```
+
 ### Example: Kubernetes NFS (future)
 Create a sandbox that mounts an NFS export with subPath isolation (non-MVP):
 
@@ -371,11 +448,12 @@ post_sandboxes.sync(client=client, body=request)
 ```
 
 ### Provider validation
-- Reject unsupported backend types per runtime.
+- Reject unsupported backend types per runtime (e.g., `pvc` is only valid in Kubernetes).
 - Validate that exactly one backend struct is specified per volume entry.
 - Normalize and validate `subPath` against traversal; reject `..` and absolute path inputs.
 - Enforce allowlist prefixes for `local.hostPath` in Docker.
 - For `oss` backend, validate required fields (`bucket`, `endpoint`, `accessKeyId`, `accessKeySecret`) and reject missing credentials.
+- For `pvc` backend, validate `claimName` is a valid Kubernetes resource name.
 - For `nfs` backend, validate required fields (`server`, `path`).
 - `subPath` is created if missing under the resolved backend path; if creation fails due to permissions or policy, the request is rejected.
 
@@ -397,7 +475,8 @@ oss_mount_root = "/mnt/oss"
 - Provider unit tests:
   - Docker `local`: bind mount generation, read-only enforcement, allowlist rejection.
   - Docker `oss`: mount option validation, credential validation, mount failure handling.
-- Integration tests for sandbox creation with volumes in Docker.
+  - Kubernetes `pvc`: PVC reference validation, volume mount generation.
+- Integration tests for sandbox creation with volumes in Docker and Kubernetes.
 - Negative tests for unsupported backends and invalid paths.
 
 ## Drawbacks
